@@ -3,7 +3,6 @@ use std::process;
 use std::fs;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 
 use clap::Parser;
 
@@ -29,7 +28,6 @@ struct Order {
 #[derive(Debug)]
 enum Severity {
     Error,
-    Warning,
 }
 
 #[derive(Debug)]
@@ -100,24 +98,139 @@ fn print_report(issues: &[Issue]) {
     }
 }
 
+fn clean_input(order: Order) -> Order {
+    let event_id = match order.event_id {
+        None => None,
+        Some(v) => {
+            let trimmed = v.trim();
+            if trimmed.is_empty(){
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+    };
+
+    let part_number = match order.part_number {
+        None => None,
+        Some(v) => {
+            let trimmed = v.trim();
+            if trimmed.is_empty(){
+                None
+            } else {
+                Some(trimmed.to_ascii_uppercase())
+            }
+        }
+    };
+
+    let timestamp = match order.timestamp {
+        None => None,
+        Some(v) => {
+            let trimmed = v.trim();
+            if trimmed.is_empty(){
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+    };
+
+
+    Order{
+        event_id,
+        part_number,
+        timestamp,
+    }
+}
+
+fn get_json_files(dir: &PathBuf) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+
+    let entries = fs::read_dir(dir).unwrap_or_else(|e| {
+        panic!("failed to read dir '{}': {}", dir.display(), e);
+    });
+
+    for entry in entries {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json"){
+            files.push(path);
+        }
+    }
+
+    files.sort();
+    files
+}
+
 fn main() {
     let cli = Cli::parse();
 
-    let raw = fs::read_to_string(&cli.input).unwrap_or_else(|e| {
-        eprintln!("failed to read '{}': {e}", cli.input.display());
+    if !cli.input.exists() {
+        eprintln!("input path does not exist: {}", cli.input.display());
         process::exit(1);
-    });
+    }
 
-    let order: Order = serde_json::from_str(&raw).unwrap_or_else(|e| {
-        eprintln!("invalid JSON: {e}");
-        process::exit(1);
-    });
-    
-    let issues = validate(&order);
+    if cli.input.is_dir() {
+        let files = get_json_files(&cli.input);
 
-    print_report(&issues);
+        if files.is_empty() {
+            eprintln!("no .json files found in {}", cli.input.display());
+            process::exit(1);
+        }
 
-    if issues.iter().any(|i| matches!(i.severity, Severity::Error)) {
+        let mut any_failed = false;
+
+        for path in files {
+            println!("== {} ==", path.display());
+
+            let raw = fs::read_to_string(&path).unwrap_or_else(|e| {
+                eprintln!("failed to read '{}': {e}", path.display());
+                process::exit(1);
+            });
+
+            let order: Order = serde_json::from_str(&raw).unwrap_or_else(|e| {
+                eprintln!("invalid JSON: {e}");
+                process::exit(1);
+            });
+
+            let normalized_order: Order = clean_input(order);
+            let issues = validate(&normalized_order);
+
+            print_report(&issues);
+
+            if issues.iter().any(|i| matches!(i.severity, Severity::Error)) {
+                any_failed = true;
+            }
+        }
+
+        if any_failed {
+            process::exit(1);
+        }
+        return;
+    }
+
+    if cli.input.is_file() {
+        let raw = fs::read_to_string(&cli.input).unwrap_or_else(|e| {
+            eprintln!("failed to read '{}': {e}", cli.input.display());
+            process::exit(1);
+        });
+        let order: Order = serde_json::from_str(&raw).unwrap_or_else(|e| {
+            eprintln!("invalid JSON: {e}");
+            process::exit(1);
+        });
+
+        let normalized_order: Order = clean_input(order);
+        
+        let issues = validate(&normalized_order);
+
+        print_report(&issues);
+
+        if issues.iter().any(|i| matches!(i.severity, Severity::Error)) {
+            process::exit(1);
+        }
+    } else {
+        eprintln!("input path is not a regular file or directory: {}", cli.input.display());
         process::exit(1);
     }
 }
