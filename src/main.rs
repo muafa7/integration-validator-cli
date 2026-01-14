@@ -234,3 +234,97 @@ fn main() {
         process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_input_trims_and_uppercases_part_number() {
+        let test_order = Order {
+            event_id: Some("  abc  ".to_string()),
+            part_number: Some("  zx-9  ".to_string()),
+            timestamp: Some(" 2020-01-01 ".to_string()),
+        };
+
+        let cleaned = clean_input(test_order);
+
+        assert_eq!(cleaned.event_id, Some("abc".to_string()));
+        assert_eq!(cleaned.part_number, Some("ZX-9".to_string()));
+        assert_eq!(cleaned.timestamp, Some("2020-01-01".to_string()));
+    }
+
+    #[test]
+    fn clean_input_convert_blank_whitespace_to_none() {
+        let test_order = Order {
+            event_id: Some(" ".to_string()),
+            part_number: Some("  ".to_string()),
+            timestamp: Some(" ".to_string()),
+        };
+
+        let cleaned = clean_input(test_order);
+
+        assert_eq!(cleaned.event_id, None);
+        assert_eq!(cleaned.part_number, None);
+        assert_eq!(cleaned.timestamp, None);
+    }
+
+    #[test]
+    fn validate_return_zero_order() {
+        let test_order = Order {
+            event_id: Some("abc".to_string()),
+            part_number: Some("zx-9".to_string()),
+            timestamp: Some("2020-01-01".to_string()),
+        };
+
+        let issues = validate(&test_order);
+
+        assert_eq!(issues.len(), 0);
+    }
+
+    #[test]
+    fn validate_missing_required_field() {
+        let test_order = Order {
+            event_id: None,
+            part_number: Some("zx-9".to_string()),
+            timestamp: Some("2020-01-01".to_string()),
+        };
+
+        let issues = validate(&test_order);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "event_id");
+        assert_eq!(issues[0].message, "missing required field");
+    }
+
+    #[test]
+    fn whitespace_only_become_missing_after_cleaning() {
+        let test_order = Order {
+            event_id: Some(" ".to_string()),
+            part_number: Some("zx-9".to_string()),
+            timestamp: Some("2020-01-01".to_string()),
+        };
+
+        let normalized = clean_input(test_order);
+        let issues = validate(&normalized);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "event_id");
+        assert_eq!(issues[0].message, "missing required field");
+    
+    }
+    #[test]
+    fn validate_must_not_be_empty() {
+        let test_order = Order {
+            event_id: Some(" ".to_string()),
+            part_number: Some("zx-9".to_string()),
+            timestamp: Some("2020-01-01".to_string()),
+        };
+
+        let issues = validate(&test_order);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].field, "event_id");
+        assert_eq!(issues[0].message, "must not be empty");
+    }
+}
